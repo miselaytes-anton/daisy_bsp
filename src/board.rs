@@ -54,7 +54,8 @@ impl Board {
                        gpiod: hal::gpio::gpiod::Parts,
                        gpioe: hal::gpio::gpioe::Parts,
                        gpiof: hal::gpio::gpiof::Parts,
-                       gpiog: hal::gpio::gpiog::Parts) -> Pins {
+                       gpiog: hal::gpio::gpiog::Parts,
+                       gpioh: hal::gpio::gpioh::Parts) -> Pins {
         Pins {
             SEED_PIN_0: gpiob.pb12,
             SEED_PIN_1: gpioc.pc11,
@@ -88,8 +89,19 @@ impl Board {
             SEED_PIN_29: gpiob.pb14,
             SEED_PIN_30: gpiob.pb15,
             LED_USER: gpioc.pc7,
-            AK4556: AK4556Pins {
-                PDN:    gpiob.pb11, // Codec Reset
+
+            // AK4556: AK4556Pins {
+            //     PDN:    gpiob.pb11, // Codec Reset
+            //     MCLK_A: gpioe.pe2,  // SAI1 MCLK_A
+            //     SCK_A:  gpioe.pe5,  // SAI1 SCK_A
+            //     FS_A:   gpioe.pe4,  // SAI1 FS_A
+            //     SD_A:   gpioe.pe6,  // SAI1 SD_A
+            //     SD_B:   gpioe.pe3,  // SAI1 SD_B
+            // },
+            
+            WM8731: WM8731Pins {
+                SCL:    gpioh.ph4,  // I2C SCL
+                SDA:    gpiob.pb11, // I2C SDA
                 MCLK_A: gpioe.pe2,  // SAI1 MCLK_A
                 SCK_A:  gpioe.pe5,  // SAI1 SCK_A
                 FS_A:   gpioe.pe4,  // SAI1 FS_A
@@ -145,7 +157,8 @@ macro_rules! board_split_gpios {
                                $dp.GPIOD.split($ccdr.peripheral.GPIOD),
                                $dp.GPIOE.split($ccdr.peripheral.GPIOE),
                                $dp.GPIOF.split($ccdr.peripheral.GPIOF),
-                               $dp.GPIOG.split($ccdr.peripheral.GPIOG))
+                               $dp.GPIOG.split($ccdr.peripheral.GPIOG),
+                               $dp.GPIOH.split($ccdr.peripheral.GPIOH))
         }
     }
 }

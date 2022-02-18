@@ -50,22 +50,43 @@ fn main() -> ! {
                                  dp.GPIOD.split(ccdr.peripheral.GPIOD),
                                  dp.GPIOE.split(ccdr.peripheral.GPIOE),
                                  dp.GPIOF.split(ccdr.peripheral.GPIOF),
-                                 dp.GPIOG.split(ccdr.peripheral.GPIOG));
+                                 dp.GPIOG.split(ccdr.peripheral.GPIOG),
+                                 dp.GPIOH.split(ccdr.peripheral.GPIOH));
 
     let mut led_user = daisy::led::LedUser::new(pins.LED_USER);
 
-    let pins = (pins.AK4556.PDN.into_push_pull_output(),
-                pins.AK4556.MCLK_A.into_alternate_af6(),
-                pins.AK4556.SCK_A.into_alternate_af6(),
-                pins.AK4556.FS_A.into_alternate_af6(),
-                pins.AK4556.SD_A.into_alternate_af6(),
-                pins.AK4556.SD_B.into_alternate_af6());
+    // let pins = (pins.AK4556.PDN.into_push_pull_output(),
+    // pins.AK4556.MCLK_A.into_alternate_af6(),
+    // pins.AK4556.SCK_A.into_alternate_af6(),
+    // pins.AK4556.FS_A.into_alternate_af6(),
+    // pins.AK4556.SD_A.into_alternate_af6(),
+    // pins.AK4556.SD_B.into_alternate_af6());
 
-    let sai1_prec = ccdr.peripheral.SAI1.kernel_clk_mux(hal::rcc::rec::Sai1ClkSel::PLL3_P);
+    let i2c2_pins = (
+        pins.WM8731.SCL.into_alternate_af4(),
+        pins.WM8731.SDA.into_alternate_af4(),
+    );
+
+    let sai1_pins = (
+        pins.WM8731.MCLK_A.into_alternate_af6(),
+        pins.WM8731.SCK_A.into_alternate_af6(),
+        pins.WM8731.FS_A.into_alternate_af6(),
+        pins.WM8731.SD_A.into_alternate_af6(),
+        pins.WM8731.SD_B.into_alternate_af6(),
+    );
+
+    let sai1_prec = ccdr
+        .peripheral
+        .SAI1
+        .kernel_clk_mux(hal::rcc::rec::Sai1ClkSel::PLL3_P);
+
+    let i2c2_prec = ccdr.peripheral.I2C2;
 
     let audio_interface = audio::Interface::init(&ccdr.clocks,
                                                  sai1_prec,
-                                                 pins,
+                                                 sai1_pins,
+                                                 i2c2_prec,                      // added i2c init
+                                                 i2c2_pins,
                                                  ccdr.peripheral.DMA1).unwrap();
 
 

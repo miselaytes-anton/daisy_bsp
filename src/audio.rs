@@ -7,8 +7,11 @@ use hal::time;
 use hal::dma;
 use hal::sai::{ self, SaiI2sExt, SaiChannel, I2sUsers };
 
-use hal::hal as embedded_hal;
-use embedded_hal::digital::v2::OutputPin;
+// use hal::hal as embedded_hal;
+// use embedded_hal::digital::v2::OutputPin;
+
+use cortex_m::prelude::_embedded_hal_blocking_i2c_Write;
+use hal::i2c; // to make the i2c2.write() work
 
 use hal::pac;
 
@@ -20,7 +23,7 @@ pub const HALF_DMA_BUFFER_LENGTH: usize = BLOCK_LENGTH * 2;     //  2 channels
 pub const DMA_BUFFER_LENGTH:usize = HALF_DMA_BUFFER_LENGTH * 2; //  2 half-blocks
 
 pub const FS: time::Hertz = time::Hertz(48_000);
-
+pub const I2C_FS: time::Hertz = time::Hertz(100_000);
 
 // - static data --------------------------------------------------------------
 
@@ -36,12 +39,17 @@ pub type Frame = (f32, f32);
 pub type Block = [Frame; BLOCK_LENGTH];
 
 pub type Sai1Pins = (
-    gpio::gpiob::PB11<gpio::Output<gpio::PushPull>>,  // PDN
+    // gpio::gpiob::PB11<gpio::Output<gpio::PushPull>>,  // PDN
     gpio::gpioe::PE2<gpio::Alternate<gpio::AF6>>,     // MCLK_A
     gpio::gpioe::PE5<gpio::Alternate<gpio::AF6>>,     // SCK_A
     gpio::gpioe::PE4<gpio::Alternate<gpio::AF6>>,     // FS_A
     gpio::gpioe::PE6<gpio::Alternate<gpio::AF6>>,     // SD_A
     gpio::gpioe::PE3<gpio::Alternate<gpio::AF6>>,     // SD_B
+);
+
+pub type I2C2Pins = (
+    gpio::gpioh::PH4<gpio::Alternate<gpio::AF4>>,  // SCL
+    gpio::gpiob::PB11<gpio::Alternate<gpio::AF4>>, // SDA
 );
 
 type TransferDma1Str0 = dma::Transfer<dma::dma::Stream0<pac::DMA1>,
@@ -74,10 +82,11 @@ pub struct Interface<'a> {
     #[cfg(not(feature = "alloc"))] function_ptr: Option<fn (f32, &mut Block)>,
     #[cfg(any(feature = "alloc"))] closure: Option<Box<dyn FnMut (f32, &mut Block) + Send + Sync + 'a>>,
 
-    ak4556_reset: Option<gpio::gpiob::PB11<gpio::Output<gpio::PushPull>>>,
+    // ak4556_reset: Option<gpio::gpiob::PB11<gpio::Output<gpio::PushPull>>>,
     hal_dma1_stream0: Option<TransferDma1Str0>,
     hal_dma1_stream1: Option<TransferDma1Str1>,
     hal_sai1: Option<hal::sai::Sai<pac::SAI1, hal::sai::I2S>>,
+    hal_i2c2: Option<hal::i2c::I2c<pac::I2C2>>,
 
     _marker: core::marker::PhantomData<&'a ()>,
 }
@@ -87,7 +96,9 @@ impl<'a> Interface<'a> {
     pub fn init(
         clocks: &hal::rcc::CoreClocks,
         sai1_rec: hal::rcc::rec::Sai1, // reset and enable control
-        pins: Sai1Pins,
+        sai1_pins: Sai1Pins,
+        i2c2_rec: hal::rcc::rec::I2c2, // reset and enable control
+        i2c2_pins: I2C2Pins,
         dma1_rec: hal::rcc::rec::Dma1
     ) -> Result<Interface<'a>, Error> {
 
@@ -135,11 +146,11 @@ impl<'a> Interface<'a> {
             .set_clock_strobe(sai::I2SClockStrobe::Rising);
 
         let sai1_pins = (
-            pins.1,
-            pins.2,
-            pins.3,
-            pins.4,
-            Some(pins.5),
+            sai1_pins.0,
+            sai1_pins.1,
+            sai1_pins.2,
+            sai1_pins.3,
+            Some(sai1_pins.4),
         );
 
         let sai1 = unsafe { pac::Peripherals::steal().SAI1 }.i2s_ch_a(
@@ -151,16 +162,27 @@ impl<'a> Interface<'a> {
             I2sUsers::new(sai1_tx_config).add_slave(sai1_rx_config),
         );
 
+        // - configure i2c ---------------------------------------------------
+
+        let i2c2 = i2c::I2cExt::i2c(
+            unsafe { pac::Peripherals::steal().I2C2 },
+            i2c2_pins,
+            I2C_FS,
+            i2c2_rec,
+            clocks,
+        );
+
         Ok(Self {
             fs: FS,
 
             #[cfg(not(feature = "alloc"))] function_ptr: None,
             #[cfg(any(feature = "alloc"))] closure: None,
 
-            ak4556_reset: Some(pins.0),
+            // ak4556_reset: Some(pins.0),
             hal_dma1_stream0: Some(dma1_str0),
             hal_dma1_stream1: Some(dma1_str1),
             hal_sai1: Some(sai1),
+            hal_i2c2: Some(i2c2),
 
             _marker: core::marker::PhantomData,
         })
@@ -187,11 +209,25 @@ impl<'a> Interface<'a> {
     fn start(&mut self) -> Result<(), Error> {
         // - AK4556 -----------------------------------------------------------
 
-        let ak4556_reset = self.ak4556_reset.as_mut().unwrap();
-        ak4556_reset.set_low().unwrap();
-        use cortex_m::asm;
-        asm::delay(480_000);     // ~ 1ms (datasheet specifies minimum 150ns)
-        ak4556_reset.set_high().unwrap();
+        // let ak4556_reset = self.ak4556_reset.as_mut().unwrap();
+        // ak4556_reset.set_low().unwrap();
+        // use cortex_m::asm;
+        // asm::delay(480_000); // ~ 1ms (datasheet specifies minimum 150ns)
+        // ak4556_reset.set_high().unwrap();
+
+        // - WM8731 -----------------------------------------------------------
+
+        let i2c2 = self.hal_i2c2.as_mut().unwrap();
+
+        let codec_i2c_address: u8 = 0x1a; // or 0x1b if CSB is high
+
+        // Go through configuration setup
+        for (register, value) in REGISTER_CONFIG {
+            let bytes = [*(register) as u8, *value as u8];
+
+            i2c2.write(codec_i2c_address as u8, &bytes)
+                .unwrap_or_default();
+        }
 
         // - start audio ------------------------------------------------------
 
@@ -320,3 +356,42 @@ fn f32_to_u24(x: f32) -> u32 {
     };
     (x as i32) as u32
 }
+
+// - WM8731 codec register addresses -------------------------------------------------
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Copy, Clone)]
+#[repr(u8)]
+enum Register {
+    LINVOL = 0x00,
+    RINVOL = 0x01,
+    LOUT1V = 0x02,
+    ROUT1V = 0x03,
+    APANA = 0x04,
+    APDIGI = 0x05, // 0000_0101
+    PWR = 0x06,
+    IFACE = 0x07,  // 0000_0111
+    SRATE = 0x08,  // 0000_1000
+    ACTIVE = 0x09, // 0000_1001
+    RESET = 0x0F,
+}
+
+const REGISTER_CONFIG: &[(Register, u8)] = &[
+    (Register::PWR, 0x80),
+    (Register::RESET, 0x00),
+    (Register::ACTIVE, 0x00),
+    (Register::APANA, 0x12),
+    //(Register::APANA,  0b0001_0010), // MICBOOST=0 MUTEMIC=1 INSEL=0 BYPASS=0 DACSEL=1 SIDETONE=0
+    (Register::APDIGI, 0x00),
+    (Register::PWR, 0x00),
+    (Register::IFACE, 0x02),
+    //(Register::IFACE,  0b0000_0010), // 0x02 FORMAT=b10 IRL=b00 LRP=0 LRSWAP=0 MS=0 BCKLINV=0
+    //(Register::IFACE,  0b0100_0010), // 0x42 FORMAT=b10 IRL=b00 LRP=0 LRSWAP=0 MS=1 BCKLINV=0
+    (Register::SRATE, 0b0000_0000), // MODE=0 BOSR=0 FS=48Khz CLKIDIV2=0 CLKODIV2=0
+    //(Register::SRATE,  0b0000_0001), // MODE=1 BOSR=0 FS=48Khz CLKIDIV2=0 CLKODIV2=0
+    (Register::LINVOL, 0x17),
+    (Register::RINVOL, 0x17),
+    (Register::LOUT1V, 0x79), // 0dB
+    (Register::ROUT1V, 0x79), // 0dB
+    (Register::ACTIVE, 0x01),
+];

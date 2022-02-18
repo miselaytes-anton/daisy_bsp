@@ -36,9 +36,20 @@ pub type SeedPin30 = hal::gpio::gpiob::PB15<hal::gpio::Analog>;  // PIN_37, USB1
 
 pub type LedUserPin = hal::gpio::gpioc::PC7 <hal::gpio::Analog>; // LED_USER
 
+// #[allow(non_snake_case)]
+// pub struct AK4556Pins {
+//     pub PDN: hal::gpio::gpiob::PB11<hal::gpio::Analog>, // Codec Reset
+//     pub MCLK_A: hal::gpio::gpioe::PE2<hal::gpio::Analog>, // SAI1 MCLK_A
+//     pub SCK_A: hal::gpio::gpioe::PE5<hal::gpio::Analog>, // SAI1 SCK_A
+//     pub FS_A: hal::gpio::gpioe::PE4<hal::gpio::Analog>, // SAI1 FS_A
+//     pub SD_A: hal::gpio::gpioe::PE6<hal::gpio::Analog>, // SAI1 SD_A
+//     pub SD_B: hal::gpio::gpioe::PE3<hal::gpio::Analog>, // SAI1 SD_B
+// }
+
 #[allow(non_snake_case)]
-pub struct AK4556Pins {
-    pub PDN:    hal::gpio::gpiob::PB11<hal::gpio::Analog>,   // Codec Reset
+pub struct WM8731Pins {
+    pub SCL:    hal::gpio::gpioh::PH4<hal::gpio::Analog>,    // I2C SCL
+    pub SDA:    hal::gpio::gpiob::PB11<hal::gpio::Analog>,   // I2C SDA
     pub MCLK_A: hal::gpio::gpioe::PE2<hal::gpio::Analog>,    // SAI1 MCLK_A
     pub SCK_A:  hal::gpio::gpioe::PE5<hal::gpio::Analog>,    // SAI1 SCK_A
     pub FS_A:   hal::gpio::gpioe::PE4<hal::gpio::Analog>,    // SAI1 FS_A
@@ -103,7 +114,8 @@ pub struct Pins {
 
     // board peripherals
     pub LED_USER: LedUserPin,
-    pub AK4556: AK4556Pins,
+    // pub AK4556: AK4556Pins,
+    pub WM8731: WM8731Pins,
     pub FMC: FMCPins,
     pub SDRAM: (), // TODO
     pub USB2: USB2Pins,
