@@ -14,6 +14,7 @@ use cortex_m::prelude::_embedded_hal_blocking_i2c_Write;
 use hal::i2c; // to make the i2c2.write() work
 
 use hal::pac;
+use cortex_m::asm;
 
 
 // - global constants ---------------------------------------------------------
@@ -227,6 +228,10 @@ impl<'a> Interface<'a> {
 
             i2c2.write(codec_i2c_address as u8, &bytes)
                 .unwrap_or_default();
+            
+            // wait ~10us
+            asm::delay(5_000);
+
         }
 
         // - start audio ------------------------------------------------------
@@ -377,21 +382,48 @@ enum Register {
 }
 
 const REGISTER_CONFIG: &[(Register, u8)] = &[
-    (Register::PWR, 0x80),
-    (Register::RESET, 0x00),
-    (Register::ACTIVE, 0x00),
-    (Register::APANA, 0x12),
-    //(Register::APANA,  0b0001_0010), // MICBOOST=0 MUTEMIC=1 INSEL=0 BYPASS=0 DACSEL=1 SIDETONE=0
-    (Register::APDIGI, 0x00),
-    (Register::PWR, 0x00),
-    (Register::IFACE, 0x02),
-    //(Register::IFACE,  0b0000_0010), // 0x02 FORMAT=b10 IRL=b00 LRP=0 LRSWAP=0 MS=0 BCKLINV=0
-    //(Register::IFACE,  0b0100_0010), // 0x42 FORMAT=b10 IRL=b00 LRP=0 LRSWAP=0 MS=1 BCKLINV=0
-    (Register::SRATE, 0b0000_0000), // MODE=0 BOSR=0 FS=48Khz CLKIDIV2=0 CLKODIV2=0
-    //(Register::SRATE,  0b0000_0001), // MODE=1 BOSR=0 FS=48Khz CLKIDIV2=0 CLKODIV2=0
+    // (Register::PWR, 0x80),
+    // (Register::RESET, 0x00),
+    // (Register::ACTIVE, 0x00),
+    // (Register::APANA, 0x12),
+    // //(Register::APANA,  0b0001_0010), // MICBOOST=0 MUTEMIC=1 INSEL=0 BYPASS=0 DACSEL=1 SIDETONE=0
+    // (Register::APDIGI, 0x00),
+    // (Register::PWR, 0x00),
+    // (Register::IFACE, 0x02),
+    // //(Register::IFACE,  0b0000_0010), // 0x02 FORMAT=b10 IRL=b00 LRP=0 LRSWAP=0 MS=0 BCKLINV=0
+    // //(Register::IFACE,  0b0100_0010), // 0x42 FORMAT=b10 IRL=b00 LRP=0 LRSWAP=0 MS=1 BCKLINV=0
+    // (Register::SRATE, 0b0000_0000), // MODE=0 BOSR=0 FS=48Khz CLKIDIV2=0 CLKODIV2=0
+    // //(Register::SRATE,  0b0000_0001), // MODE=1 BOSR=0 FS=48Khz CLKIDIV2=0 CLKODIV2=0
+    // (Register::LINVOL, 0x17),
+    // (Register::RINVOL, 0x17),
+    // (Register::LOUT1V, 0x79), // 0dB
+    // (Register::ROUT1V, 0x79), // 0dB
+    // (Register::ACTIVE, 0x01),
+
+    // reset Codec
+    (Register::RESET, 0x00), 
+
+    // set line inputs 0dB
     (Register::LINVOL, 0x17),
     (Register::RINVOL, 0x17),
-    (Register::LOUT1V, 0x79), // 0dB
-    (Register::ROUT1V, 0x79), // 0dB
+
+    // set headphone to mute
+    (Register::LOUT1V, 0x00),
+    (Register::ROUT1V, 0x00),
+
+    // set analog and digital routing
+    (Register::APANA, 0x12),
+    (Register::APDIGI, 0x00),
+
+    // configure power management
+    (Register::PWR, 0x42),
+
+    // configure digital format
+    (Register::IFACE, 0x09),
+    
+    // set samplerate
+    (Register::SRATE, 0x00),
+
+    (Register::ACTIVE, 0x00),
     (Register::ACTIVE, 0x01),
 ];
