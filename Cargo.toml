@@ -33,6 +33,7 @@ cortex-m-rt = { version = "^0.6.13", features = ["device"] }
 stm32h7xx-hal = { version = "0.11.0", features = [ "stm32h750v", "rt", "revision_v", "usb_hs" ] }
 cty = "0.2.1"
 cortex-m-semihosting = "0.3.5"
+num_enum = { version = "0.5.6", default-features = false }
 
 # - optional dependencies used by features
 

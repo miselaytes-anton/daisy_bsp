@@ -16,6 +16,7 @@ use hal::i2c; // to make the i2c2.write() work
 use hal::pac;
 use cortex_m::asm;
 
+use num_enum::IntoPrimitive;
 
 // - global constants ---------------------------------------------------------
 
@@ -108,40 +109,44 @@ impl<'a> Interface<'a> {
         let dma1_streams = dma::dma::StreamsTuple::new(unsafe { pac::Peripherals::steal().DMA1 }, dma1_rec);
 
         // dma1 stream 0
-        let tx_buffer: &'static mut [u32; DMA_BUFFER_LENGTH] = unsafe { &mut TX_BUFFER };
+        let rx_buffer: &'static mut [u32; DMA_BUFFER_LENGTH] = unsafe { &mut RX_BUFFER };
         let dma_config = dma::dma::DmaConfig::default()
             .priority(dma::config::Priority::High)
             .memory_increment(true)
             .peripheral_increment(false)
             .circular_buffer(true)
             .fifo_enable(false);
+
+        // is later overwritten to be a P2M stream! (HAL doesn't support this yet)
         let dma1_str0: dma::Transfer<_, _, dma::MemoryToPeripheral, _, _> = dma::Transfer::init(
             dma1_streams.0,
-            unsafe { pac::Peripherals::steal().SAI1 },
-            tx_buffer,
-            None,
-            dma_config,
-        );
-
-        // dma1 stream 1
-        let rx_buffer: &'static mut [u32; DMA_BUFFER_LENGTH] = unsafe { &mut RX_BUFFER };
-        let dma_config = dma_config.transfer_complete_interrupt(true)
-                                   .half_transfer_interrupt(true);
-        let dma1_str1: dma::Transfer<_, _, dma::PeripheralToMemory, _, _> = dma::Transfer::init(
-            dma1_streams.1,
             unsafe { pac::Peripherals::steal().SAI1 },
             rx_buffer,
             None,
             dma_config,
         );
 
+        // dma1 stream 1
+        let tx_buffer: &'static mut [u32; DMA_BUFFER_LENGTH] = unsafe { &mut TX_BUFFER };
+        let dma_config = dma_config.transfer_complete_interrupt(true)
+                                   .half_transfer_interrupt(true);
+
+        // is later overwritten to be a M2P stream! (HAL doesn't support this yet)
+        let dma1_str1: dma::Transfer<_, _, dma::PeripheralToMemory, _, _> = dma::Transfer::init(
+            dma1_streams.1,
+            unsafe { pac::Peripherals::steal().SAI1 },
+            tx_buffer,
+            None,
+            dma_config,
+        );
+
         // - configure sai1 ---------------------------------------------------
 
-        let sai1_tx_config = sai::I2SChanConfig::new(sai::I2SDir::Tx)
+        let sai1_rx_config = sai::I2SChanConfig::new(sai::I2SDir::Rx)
             .set_frame_sync_active_high(true)
             .set_clock_strobe(sai::I2SClockStrobe::Falling);
 
-        let sai1_rx_config = sai::I2SChanConfig::new(sai::I2SDir::Rx)
+        let sai1_tx_config = sai::I2SChanConfig::new(sai::I2SDir::Tx)
             .set_sync_type(sai::I2SSync::Internal)
             .set_frame_sync_active_high(true)
             .set_clock_strobe(sai::I2SClockStrobe::Rising);
@@ -160,8 +165,14 @@ impl<'a> Interface<'a> {
             sai::I2SDataSize::BITS_24,
             sai1_rec,
             clocks,
-            I2sUsers::new(sai1_tx_config).add_slave(sai1_rx_config),
+            I2sUsers::new(sai1_rx_config).add_slave(sai1_tx_config),
         );
+
+        // manually configure Channel B as transmit stream
+        let dma1_reg = unsafe { pac::Peripherals::steal().DMA1 };
+        dma1_reg.st[0].cr.modify(|_ , w | w.dir().peripheral_to_memory());
+        // manually configure Channel A as receive stream
+        dma1_reg.st[1].cr.modify(|_ , w | w.dir().memory_to_peripheral());
 
         // - configure i2c ---------------------------------------------------
 
@@ -224,10 +235,13 @@ impl<'a> Interface<'a> {
 
         // Go through configuration setup
         for (register, value) in REGISTER_CONFIG {
-            let bytes = [*(register) as u8, *value as u8];
+            let register: u8 = (*register).into();
+            let value: u8 = (*value).into();
+            let byte1: u8 = ((register << 1) & 0b1111_1110) | ((value >> 7) & 0b0000_0001u8);
+            let byte2: u8 = value & 0b1111_1111;
+            let bytes = [byte1, byte2];
 
-            i2c2.write(codec_i2c_address as u8, &bytes)
-                .unwrap_or_default();
+            i2c2.write(codec_i2c_address, &bytes).unwrap_or_default();
             
             // wait ~10us
             asm::delay(5_000);
@@ -244,14 +258,14 @@ impl<'a> Interface<'a> {
         let sai1 = self.hal_sai1.as_mut().unwrap();
 
         dma1_str1.start(|_sai1_rb| {
-            sai1.enable_dma(SaiChannel::ChannelB);
+            sai1.enable_dma(SaiChannel::ChannelA); // rx
         });
 
         dma1_str0.start(|sai1_rb| {
-            sai1.enable_dma(SaiChannel::ChannelA);
+            sai1.enable_dma(SaiChannel::ChannelB); // tx
 
             // wait until sai1's fifo starts to receive data
-            while sai1_rb.cha.sr.read().flvl().is_empty() { }
+            while sai1_rb.chb.sr.read().flvl().is_empty() { }
 
             sai1.enable();
 
@@ -365,7 +379,7 @@ fn f32_to_u24(x: f32) -> u32 {
 // - WM8731 codec register addresses -------------------------------------------------
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, IntoPrimitive)]
 #[repr(u8)]
 enum Register {
     LINVOL = 0x00,
@@ -382,24 +396,6 @@ enum Register {
 }
 
 const REGISTER_CONFIG: &[(Register, u8)] = &[
-    // (Register::PWR, 0x80),
-    // (Register::RESET, 0x00),
-    // (Register::ACTIVE, 0x00),
-    // (Register::APANA, 0x12),
-    // //(Register::APANA,  0b0001_0010), // MICBOOST=0 MUTEMIC=1 INSEL=0 BYPASS=0 DACSEL=1 SIDETONE=0
-    // (Register::APDIGI, 0x00),
-    // (Register::PWR, 0x00),
-    // (Register::IFACE, 0x02),
-    // //(Register::IFACE,  0b0000_0010), // 0x02 FORMAT=b10 IRL=b00 LRP=0 LRSWAP=0 MS=0 BCKLINV=0
-    // //(Register::IFACE,  0b0100_0010), // 0x42 FORMAT=b10 IRL=b00 LRP=0 LRSWAP=0 MS=1 BCKLINV=0
-    // (Register::SRATE, 0b0000_0000), // MODE=0 BOSR=0 FS=48Khz CLKIDIV2=0 CLKODIV2=0
-    // //(Register::SRATE,  0b0000_0001), // MODE=1 BOSR=0 FS=48Khz CLKIDIV2=0 CLKODIV2=0
-    // (Register::LINVOL, 0x17),
-    // (Register::RINVOL, 0x17),
-    // (Register::LOUT1V, 0x79), // 0dB
-    // (Register::ROUT1V, 0x79), // 0dB
-    // (Register::ACTIVE, 0x01),
-
     // reset Codec
     (Register::RESET, 0x00), 
 
@@ -419,7 +415,7 @@ const REGISTER_CONFIG: &[(Register, u8)] = &[
     (Register::PWR, 0x42),
 
     // configure digital format
-    (Register::IFACE, 0x09),
+    (Register::IFACE, 0x0A),
     
     // set samplerate
     (Register::SRATE, 0x00),
