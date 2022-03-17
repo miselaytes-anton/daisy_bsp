@@ -409,7 +409,7 @@ const REGISTER_CONFIG: &[(Register, u8)] = &[
 
     // set analog and digital routing
     (Register::APANA, 0x12),
-    (Register::APDIGI, 0x00),
+    (Register::APDIGI, 0x01),
 
     // configure power management
     (Register::PWR, 0x42),
