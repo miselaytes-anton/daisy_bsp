@@ -1,11 +1,13 @@
-#[cfg(any(feature = "alloc"))] extern crate alloc;
-#[cfg(any(feature = "alloc"))] use alloc::boxed::Box;
+#[cfg(any(feature = "alloc"))]
+extern crate alloc;
+#[cfg(any(feature = "alloc"))]
+use alloc::boxed::Box;
 
-use stm32h7xx_hal as hal;
-use hal::gpio;
-use hal::time;
 use hal::dma;
-use hal::sai::{ self, SaiI2sExt, SaiChannel, I2sUsers };
+use hal::gpio;
+use hal::sai::{self, I2sUsers, SaiChannel, SaiI2sExt};
+use hal::time;
+use stm32h7xx_hal as hal;
 
 // use hal::hal as embedded_hal;
 // use embedded_hal::digital::v2::OutputPin;
@@ -13,16 +15,16 @@ use hal::sai::{ self, SaiI2sExt, SaiChannel, I2sUsers };
 use cortex_m::prelude::_embedded_hal_blocking_i2c_Write;
 use hal::i2c; // to make the i2c2.write() work
 
-use hal::pac;
 use cortex_m::asm;
+use hal::pac;
 
 use num_enum::IntoPrimitive;
 
 // - global constants ---------------------------------------------------------
 
-pub const BLOCK_LENGTH: usize = 32;                             // 32 samples
-pub const HALF_DMA_BUFFER_LENGTH: usize = BLOCK_LENGTH * 2;     //  2 channels
-pub const DMA_BUFFER_LENGTH:usize = HALF_DMA_BUFFER_LENGTH * 2; //  2 half-blocks
+pub const BLOCK_LENGTH: usize = 32; // 32 samples
+pub const HALF_DMA_BUFFER_LENGTH: usize = BLOCK_LENGTH * 2; //  2 channels
+pub const DMA_BUFFER_LENGTH: usize = HALF_DMA_BUFFER_LENGTH * 2; //  2 half-blocks
 
 pub const FS: time::Hertz = time::Hertz(48_000);
 pub const I2C_FS: time::Hertz = time::Hertz(100_000);
@@ -34,7 +36,6 @@ static mut TX_BUFFER: [u32; DMA_BUFFER_LENGTH] = [0; DMA_BUFFER_LENGTH];
 #[link_section = ".sram1_bss"]
 static mut RX_BUFFER: [u32; DMA_BUFFER_LENGTH] = [0; DMA_BUFFER_LENGTH];
 
-
 // - types --------------------------------------------------------------------
 
 pub type Frame = (f32, f32);
@@ -42,11 +43,11 @@ pub type Block = [Frame; BLOCK_LENGTH];
 
 pub type Sai1Pins = (
     // gpio::gpiob::PB11<gpio::Output<gpio::PushPull>>,  // PDN
-    gpio::gpioe::PE2<gpio::Alternate<gpio::AF6>>,     // MCLK_A
-    gpio::gpioe::PE5<gpio::Alternate<gpio::AF6>>,     // SCK_A
-    gpio::gpioe::PE4<gpio::Alternate<gpio::AF6>>,     // FS_A
-    gpio::gpioe::PE6<gpio::Alternate<gpio::AF6>>,     // SD_A
-    gpio::gpioe::PE3<gpio::Alternate<gpio::AF6>>,     // SD_B
+    gpio::gpioe::PE2<gpio::Alternate<gpio::AF6>>, // MCLK_A
+    gpio::gpioe::PE5<gpio::Alternate<gpio::AF6>>, // SCK_A
+    gpio::gpioe::PE4<gpio::Alternate<gpio::AF6>>, // FS_A
+    gpio::gpioe::PE6<gpio::Alternate<gpio::AF6>>, // SD_A
+    gpio::gpioe::PE3<gpio::Alternate<gpio::AF6>>, // SD_B
 );
 
 pub type I2C2Pins = (
@@ -54,18 +55,21 @@ pub type I2C2Pins = (
     gpio::gpiob::PB11<gpio::Alternate<gpio::AF4>>, // SDA
 );
 
-type TransferDma1Str0 = dma::Transfer<dma::dma::Stream0<pac::DMA1>,
-                                      pac::SAI1,
-                                      dma::MemoryToPeripheral,
-                                      &'static mut [u32; DMA_BUFFER_LENGTH],
-                                      dma::DBTransfer>;
+type TransferDma1Str0 = dma::Transfer<
+    dma::dma::Stream0<pac::DMA1>,
+    pac::SAI1,
+    dma::MemoryToPeripheral,
+    &'static mut [u32; DMA_BUFFER_LENGTH],
+    dma::DBTransfer,
+>;
 
-type TransferDma1Str1 = dma::Transfer<dma::dma::Stream1<pac::DMA1>,
-                                      pac::SAI1,
-                                      dma::PeripheralToMemory,
-                                      &'static mut [u32; DMA_BUFFER_LENGTH],
-                                      dma::DBTransfer>;
-
+type TransferDma1Str1 = dma::Transfer<
+    dma::dma::Stream1<pac::DMA1>,
+    pac::SAI1,
+    dma::PeripheralToMemory,
+    &'static mut [u32; DMA_BUFFER_LENGTH],
+    dma::DBTransfer,
+>;
 
 // - Error --------------------------------------------------------------------
 
@@ -75,14 +79,15 @@ pub enum Error {
     Dma,
 }
 
-
 // - audio::Interface ---------------------------------------------------------
 
 pub struct Interface<'a> {
     pub fs: time::Hertz,
 
-    #[cfg(not(feature = "alloc"))] function_ptr: Option<fn (f32, &mut Block)>,
-    #[cfg(any(feature = "alloc"))] closure: Option<Box<dyn FnMut (f32, &mut Block) + Send + Sync + 'a>>,
+    #[cfg(not(feature = "alloc"))]
+    function_ptr: Option<fn(f32, &mut Block)>,
+    #[cfg(any(feature = "alloc"))]
+    closure: Option<Box<dyn FnMut(f32, &mut Block) + Send + Sync + 'a>>,
 
     // ak4556_reset: Option<gpio::gpiob::PB11<gpio::Output<gpio::PushPull>>>,
     hal_dma1_stream0: Option<TransferDma1Str0>,
@@ -93,7 +98,6 @@ pub struct Interface<'a> {
     _marker: core::marker::PhantomData<&'a ()>,
 }
 
-
 impl<'a> Interface<'a> {
     pub fn init(
         clocks: &hal::rcc::CoreClocks,
@@ -101,12 +105,12 @@ impl<'a> Interface<'a> {
         sai1_pins: Sai1Pins,
         i2c2_rec: hal::rcc::rec::I2c2, // reset and enable control
         i2c2_pins: I2C2Pins,
-        dma1_rec: hal::rcc::rec::Dma1
+        dma1_rec: hal::rcc::rec::Dma1,
     ) -> Result<Interface<'a>, Error> {
-
         // - configure dma1 ---------------------------------------------------
 
-        let dma1_streams = dma::dma::StreamsTuple::new(unsafe { pac::Peripherals::steal().DMA1 }, dma1_rec);
+        let dma1_streams =
+            dma::dma::StreamsTuple::new(unsafe { pac::Peripherals::steal().DMA1 }, dma1_rec);
 
         // dma1 stream 0
         let rx_buffer: &'static mut [u32; DMA_BUFFER_LENGTH] = unsafe { &mut RX_BUFFER };
@@ -128,8 +132,9 @@ impl<'a> Interface<'a> {
 
         // dma1 stream 1
         let tx_buffer: &'static mut [u32; DMA_BUFFER_LENGTH] = unsafe { &mut TX_BUFFER };
-        let dma_config = dma_config.transfer_complete_interrupt(true)
-                                   .half_transfer_interrupt(true);
+        let dma_config = dma_config
+            .transfer_complete_interrupt(true)
+            .half_transfer_interrupt(true);
 
         // is later overwritten to be a M2P stream! (HAL doesn't support this yet)
         let dma1_str1: dma::Transfer<_, _, dma::PeripheralToMemory, _, _> = dma::Transfer::init(
@@ -142,14 +147,12 @@ impl<'a> Interface<'a> {
 
         // - configure sai1 ---------------------------------------------------
 
-        let sai1_rx_config = sai::I2SChanConfig::new(sai::I2SDir::Rx)
-            .set_frame_sync_active_high(true)
-            .set_clock_strobe(sai::I2SClockStrobe::Falling);
+        let sai1_rx_config =
+            sai::I2SChanConfig::new(sai::I2SDir::Rx).set_frame_sync_active_high(true);
 
         let sai1_tx_config = sai::I2SChanConfig::new(sai::I2SDir::Tx)
             .set_sync_type(sai::I2SSync::Internal)
-            .set_frame_sync_active_high(true)
-            .set_clock_strobe(sai::I2SClockStrobe::Rising);
+            .set_frame_sync_active_high(true);
 
         let sai1_pins = (
             sai1_pins.0,
@@ -170,9 +173,13 @@ impl<'a> Interface<'a> {
 
         // manually configure Channel B as transmit stream
         let dma1_reg = unsafe { pac::Peripherals::steal().DMA1 };
-        dma1_reg.st[0].cr.modify(|_ , w | w.dir().peripheral_to_memory());
+        dma1_reg.st[0]
+            .cr
+            .modify(|_, w| w.dir().peripheral_to_memory());
         // manually configure Channel A as receive stream
-        dma1_reg.st[1].cr.modify(|_ , w | w.dir().memory_to_peripheral());
+        dma1_reg.st[1]
+            .cr
+            .modify(|_, w| w.dir().memory_to_peripheral());
 
         // - configure i2c ---------------------------------------------------
 
@@ -187,8 +194,10 @@ impl<'a> Interface<'a> {
         Ok(Self {
             fs: FS,
 
-            #[cfg(not(feature = "alloc"))] function_ptr: None,
-            #[cfg(any(feature = "alloc"))] closure: Option::None,
+            #[cfg(not(feature = "alloc"))]
+            function_ptr: None,
+            #[cfg(any(feature = "alloc"))]
+            closure: Option::None,
 
             // ak4556_reset: Some(pins.0),
             hal_dma1_stream0: Some(dma1_str0),
@@ -200,10 +209,9 @@ impl<'a> Interface<'a> {
         })
     }
 
-
     /// assign function pointer for interrupt callback and start audio
     #[cfg(not(feature = "alloc"))]
-    pub fn spawn(mut self, function_ptr:fn (f32, &mut Block)) -> Result<Self, Error> {
+    pub fn spawn(mut self, function_ptr: fn(f32, &mut Block)) -> Result<Self, Error> {
         self.function_ptr = Some(function_ptr);
         self.start()?;
         Ok(self) // TODO type state for started audio interface
@@ -211,12 +219,14 @@ impl<'a> Interface<'a> {
 
     /// assign closure for interrupt callback and start audio
     #[cfg(any(feature = "alloc"))]
-    pub fn spawn<F: FnMut(f32, &mut Block) + Send + Sync + 'a>(mut self, closure: F) -> Result<Self, Error> {
+    pub fn spawn<F: FnMut(f32, &mut Block) + Send + Sync + 'a>(
+        mut self,
+        closure: F,
+    ) -> Result<Self, Error> {
         self.closure = Some(Box::new(closure));
         self.start()?;
         Ok(self) // TODO type state for started audio interface
     }
-
 
     fn start(&mut self) -> Result<(), Error> {
         // - AK4556 -----------------------------------------------------------
@@ -242,16 +252,17 @@ impl<'a> Interface<'a> {
             let bytes = [byte1, byte2];
 
             i2c2.write(codec_i2c_address, &bytes).unwrap_or_default();
-            
+
             // wait ~10us
             asm::delay(5_000);
-
         }
 
         // - start audio ------------------------------------------------------
 
         // unmask interrupt handler for dma 1, stream 1
-        unsafe { pac::NVIC::unmask(pac::Interrupt::DMA1_STR1); }
+        unsafe {
+            pac::NVIC::unmask(pac::Interrupt::DMA1_STR1);
+        }
 
         let dma1_str0 = self.hal_dma1_stream0.as_mut().unwrap();
         let dma1_str1 = self.hal_dma1_stream1.as_mut().unwrap();
@@ -265,7 +276,7 @@ impl<'a> Interface<'a> {
             sai1.enable_dma(SaiChannel::ChannelB); // tx
 
             // wait until sai1's fifo starts to receive data
-            while sai1_rb.chb.sr.read().flvl().is_empty() { }
+            while sai1_rb.chb.sr.read().flvl().is_empty() {}
 
             sai1.enable();
 
@@ -282,11 +293,9 @@ impl<'a> Interface<'a> {
         let skip = if transfer.get_half_transfer_flag() {
             transfer.clear_half_transfer_interrupt();
             (0, HALF_DMA_BUFFER_LENGTH)
-
         } else if transfer.get_transfer_complete_flag() {
             transfer.clear_transfer_complete_interrupt();
             (HALF_DMA_BUFFER_LENGTH, 0)
-
         } else {
             // TODO handle error flags once HAL supports them
             return Err(Error::Dma);
@@ -334,7 +343,6 @@ impl<'a> Interface<'a> {
         Ok(())
     }
 
-
     fn invoke_callback(&mut self, block: &mut Block) {
         #[cfg(not(feature = "alloc"))]
         if let Some(function_ptr) = self.function_ptr.as_mut() {
@@ -348,7 +356,6 @@ impl<'a> Interface<'a> {
     }
 }
 
-
 // - conversion helpers -------------------------------------------------------
 
 use core::num::Wrapping;
@@ -357,7 +364,7 @@ use core::num::Wrapping;
 #[inline(always)]
 fn u24_to_f32(y: u32) -> f32 {
     let y = (Wrapping(y) + Wrapping(0x0080_0000)).0 & 0x00FF_FFFF; // convert to i32
-    let y = (y as f32 / 8_388_608.) - 1.;  // (2^24) / 2
+    let y = (y as f32 / 8_388_608.) - 1.; // (2^24) / 2
     y
 }
 
@@ -397,29 +404,22 @@ enum Register {
 
 const REGISTER_CONFIG: &[(Register, u8)] = &[
     // reset Codec
-    (Register::RESET, 0x00), 
-
+    (Register::RESET, 0x00),
     // set line inputs 0dB
     (Register::LINVOL, 0x17),
     (Register::RINVOL, 0x17),
-
     // set headphone to mute
     (Register::LOUT1V, 0x00),
     (Register::ROUT1V, 0x00),
-
     // set analog and digital routing
     (Register::APANA, 0x12),
     (Register::APDIGI, 0x01),
-
     // configure power management
     (Register::PWR, 0x42),
-
     // configure digital format
     (Register::IFACE, 0x0A),
-    
     // set samplerate
     (Register::SRATE, 0x00),
-
     (Register::ACTIVE, 0x00),
     (Register::ACTIVE, 0x01),
 ];

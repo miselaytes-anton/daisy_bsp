@@ -36,3 +36,5 @@ To make use of closures, you will need to activate the `alloc` feature and compi
 For example:
 
     cargo +nightly run --example audio_midi --features="alloc, uses_num"
+
+cargo flash --chip STM32H750IBKx --example audio_passthrough

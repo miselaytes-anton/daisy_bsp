@@ -7,33 +7,37 @@ license = "MIT"
 description = "A board support package for the Electro-Smith Daisy Seed"
 repository = "https://github.com/antoinevg/daisy_bsp"
 documentation = "https://github.com/antoinevg/daisy_bsp/wiki"
-categories = [
-    "embedded",
-    "hardware-support",
-    "no-std",
-]
-keywords = [
-    "cortex-m",
-    "bsp",
-    "stm32h7xx",
-    "daisy",
-]
+categories = ["embedded", "hardware-support", "no-std"]
+keywords = ["cortex-m", "bsp", "stm32h7xx", "daisy"]
 readme = "README.md"
 
 [package.metadata.docs.rs]
-features = [ "seed", "pod", "petal", "patch", "field" ]
+features = ["seed", "pod", "petal", "patch", "field"]
 targets = ["thumbv7em-none-eabihf"]
 
 
 # - dependencies --------------------------------------------------------------
 
 [dependencies]
+cfg-if = "0.1.10"
 cortex-m = "^0.7.1"
 cortex-m-rt = { version = "^0.6.13", features = ["device"] }
-stm32h7xx-hal = { version = "0.11.0", features = [ "stm32h750v", "rt", "revision_v", "usb_hs" ] }
+stm32h7xx-hal = { version = "0.11.0", features = [
+    "stm32h750v",
+    "fmc",
+    "rt",
+    "revision_v",
+    "usb_hs",
+] }
 cty = "0.2.1"
 cortex-m-semihosting = "0.3.5"
 num_enum = { version = "0.5.6", default-features = false }
+stm32-fmc = "0.2.2"
+micromath = "1.1.1"
+log = "0.4.11"
+rtt-target = { version = "0.3.0", features = ["cortex-m"] }
+panic-rtt-target = { version = "0.1.1", features = ["cortex-m"] }
+
 
 # - optional dependencies used by features
 
@@ -50,7 +54,7 @@ optional = true
 [dependencies.num]
 version = "0.3.1"
 default-features = false
-features = [ "libm" ]
+features = ["libm"]
 optional = true
 
 [dependencies.num-derive]
@@ -75,15 +79,15 @@ panic-semihosting = { version = "0.5.6" }
 # - features ------------------------------------------------------------------
 
 [features]
-default = [ "seed" ]
-alloc = [ "static-alloc", "without-alloc"  ] # requires rust nightly
+default = ["seed"]
+alloc = ["static-alloc", "without-alloc"]      # requires rust nightly
 seed = []
 pod = []
 petal = []
 patch = []
 field = []
 log-itm = []
-uses_num = [ "num", "num-derive", "num-traits" ]
+uses_num = ["num", "num-derive", "num-traits"]
 
 
 # - profiles ------------------------------------------------------------------
@@ -91,7 +95,7 @@ uses_num = [ "num", "num-derive", "num-traits" ]
 [profile.dev]
 debug = true
 incremental = false
-opt-level = "s" # optimize for binary size
+opt-level = "s"     # optimize for binary size
 
 [profile.release]
 debug = true
@@ -102,44 +106,44 @@ opt-level = "s" #  optimize for binary size
 
 [[example]]
 name = "blinky"
-required-features = [ "seed" ]
+required-features = ["seed"]
 
 [[example]]
 name = "blinky_pac"
-required-features = [ "seed" ]
+required-features = ["seed"]
 
 [[example]]
 name = "blinky_hal"
-required-features = [ "seed" ]
+required-features = ["seed"]
 
 [[example]]
 name = "button"
-required-features = [ "seed" ]
+required-features = ["seed"]
 
 [[example]]
 name = "audio_passthrough"
-required-features = [ "seed" ]
+required-features = ["seed"]
 
 [[example]]
 name = "audio_testsignal"
-required-features = [ "seed" ]
+required-features = ["seed"]
 
 [[example]]
 name = "audio_midi"
-required-features = [ "alloc", "seed", "uses_num" ]
+required-features = ["alloc", "seed", "uses_num"]
 
 [[example]]
 name = "serial"
-required-features = [ "seed" ]
+required-features = ["seed"]
 
 [[example]]
 name = "adc_hal"
-required-features = [ "seed" ]
+required-features = ["seed"]
 
 [[example]]
 name = "adc_bsp"
-required-features = [ "seed" ]
+required-features = ["seed"]
 
 [[example]]
 name = "itm"
-required-features = [ "seed", "log-itm" ]
+required-features = ["seed", "log-itm"]

@@ -1,12 +1,10 @@
 #![cfg_attr(feature = "alloc", feature(alloc_error_handler))]
-
 #![deny(warnings)]
 #![no_std]
 
 //! Board support crate for Daisy hardware
 //!
 //! # Usage - see examples/
-
 
 // - modules ------------------------------------------------------------------
 
@@ -18,9 +16,11 @@ pub mod clocks;
 #[cfg(any(feature = "log-itm"))]
 pub mod itm;
 pub mod led;
+pub mod logger;
 pub mod midi;
+pub mod mpu;
 pub mod pins;
-
+pub mod sdram;
 
 // - log macros ---------------------------------------------------------------
 
@@ -41,11 +41,10 @@ macro_rules! loggit {
     )
 }
 
-
 // - exports ------------------------------------------------------------------
 
-pub use stm32h7xx_hal as hal;
 pub use hal::hal as embedded_hal;
 pub use hal::pac;
+pub use stm32h7xx_hal as hal;
 
 pub use board::Board;

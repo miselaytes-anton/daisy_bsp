@@ -19,19 +19,15 @@ use pac::interrupt;
 use daisy::audio;
 use daisy::led::Led;
 use daisy::logger;
-use daisy::loggit;
 use daisy::sdram;
 use log::info;
-
-// - static global state ------------------------------------------------------
-
-static AUDIO_INTERFACE: Mutex<RefCell<Option<audio::Interface>>> = Mutex::new(RefCell::new(None));
 
 // - entry point --------------------------------------------------------------
 
 #[entry]
 fn main() -> ! {
     logger::init();
+
     // - board setup ----------------------------------------------------------
 
     let board = daisy::Board::take().unwrap();
@@ -53,36 +49,6 @@ fn main() -> ! {
     );
 
     let mut led_user = daisy::led::LedUser::new(pins.LED_USER);
-
-    let i2c2_pins = (
-        pins.WM8731.SCL.into_alternate_af4(),
-        pins.WM8731.SDA.into_alternate_af4(),
-    );
-
-    let sai1_pins = (
-        pins.WM8731.MCLK_A.into_alternate_af6(),
-        pins.WM8731.SCK_A.into_alternate_af6(),
-        pins.WM8731.FS_A.into_alternate_af6(),
-        pins.WM8731.SD_A.into_alternate_af6(),
-        pins.WM8731.SD_B.into_alternate_af6(),
-    );
-
-    let sai1_prec = ccdr
-        .peripheral
-        .SAI1
-        .kernel_clk_mux(hal::rcc::rec::Sai1ClkSel::PLL3_P);
-
-    let i2c2_prec = ccdr.peripheral.I2C2;
-
-    let audio_interface = audio::Interface::init(
-        &ccdr.clocks,
-        sai1_prec,
-        sai1_pins,
-        i2c2_prec, // added i2c init
-        i2c2_pins,
-        ccdr.peripheral.DMA1,
-    )
-    .unwrap();
 
     let mut cp = cortex_m::Peripherals::take().unwrap();
     let mut delay = Delay::new(cp.SYST, ccdr.clocks);
@@ -131,44 +97,6 @@ fn main() -> ! {
     }
     info!("Test Success!");
 
-    // - audio callback -------------------------------------------------------
-
-    // handle callback with function pointer
-    #[cfg(not(feature = "alloc"))]
-    let audio_interface = {
-        fn callback(_fs: f32, block: &mut audio::Block) {
-            for frame in block {
-                let (left, right) = *frame;
-                *frame = (left, right);
-            }
-        }
-
-        audio_interface.spawn(callback)
-    };
-
-    // handle callback with closure (needs alloc)
-    #[cfg(any(feature = "alloc"))]
-    let audio_interface = {
-        audio_interface.spawn(move |fs, block| {
-            for frame in block {
-                let (left, right) = *frame;
-                *frame = (left, right);
-            }
-        })
-    };
-
-    let audio_interface = match audio_interface {
-        Ok(audio_interface) => audio_interface,
-        Err(e) => {
-            loggit!("Failed to start audio interface: {:?}", e);
-            loop {}
-        }
-    };
-
-    cortex_m::interrupt::free(|cs| {
-        AUDIO_INTERFACE.borrow(cs).replace(Some(audio_interface));
-    });
-
     // - main loop ------------------------------------------------------------
 
     let one_second = ccdr.clocks.sys_ck().0;
@@ -179,21 +107,4 @@ fn main() -> ! {
         led_user.off();
         asm::delay(one_second);
     }
-}
-
-// - interrupts ---------------------------------------------------------------
-
-/// interrupt handler for: dma1, stream1
-#[interrupt]
-fn DMA1_STR1() {
-    cortex_m::interrupt::free(|cs| {
-        if let Some(audio_interface) = AUDIO_INTERFACE.borrow(cs).borrow_mut().as_mut() {
-            match audio_interface.handle_interrupt_dma1_str1() {
-                Ok(()) => (),
-                Err(e) => {
-                    loggit!("Failed to handle interrupt: {:?}", e);
-                }
-            };
-        }
-    });
 }

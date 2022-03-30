@@ -4,9 +4,9 @@
 use core::cell::RefCell;
 use cortex_m::interrupt::Mutex;
 
-use panic_semihosting as _;
-use cortex_m_rt::entry;
 use cortex_m::asm;
+use cortex_m_rt::entry;
+use panic_semihosting as _;
 
 use daisy_bsp as daisy;
 
@@ -23,35 +23,32 @@ use daisy::loggit;
 mod dsp;
 use dsp::osc;
 
-
 // - static global state ------------------------------------------------------
 
 static AUDIO_INTERFACE: Mutex<RefCell<Option<audio::Interface>>> = Mutex::new(RefCell::new(None));
-
 
 // - entry point --------------------------------------------------------------
 
 #[entry]
 fn main() -> ! {
-
     // - board setup ----------------------------------------------------------
 
     let board = daisy::Board::take().unwrap();
 
     let dp = pac::Peripherals::take().unwrap();
 
-    let ccdr = board.freeze_clocks(dp.PWR.constrain(),
-                                   dp.RCC.constrain(),
-                                   &dp.SYSCFG);
+    let ccdr = board.freeze_clocks(dp.PWR.constrain(), dp.RCC.constrain(), &dp.SYSCFG);
 
-    let pins = board.split_gpios(dp.GPIOA.split(ccdr.peripheral.GPIOA),
-                                 dp.GPIOB.split(ccdr.peripheral.GPIOB),
-                                 dp.GPIOC.split(ccdr.peripheral.GPIOC),
-                                 dp.GPIOD.split(ccdr.peripheral.GPIOD),
-                                 dp.GPIOE.split(ccdr.peripheral.GPIOE),
-                                 dp.GPIOF.split(ccdr.peripheral.GPIOF),
-                                 dp.GPIOG.split(ccdr.peripheral.GPIOG),
-                                 dp.GPIOH.split(ccdr.peripheral.GPIOH));
+    let pins = board.split_gpios(
+        dp.GPIOA.split(ccdr.peripheral.GPIOA),
+        dp.GPIOB.split(ccdr.peripheral.GPIOB),
+        dp.GPIOC.split(ccdr.peripheral.GPIOC),
+        dp.GPIOD.split(ccdr.peripheral.GPIOD),
+        dp.GPIOE.split(ccdr.peripheral.GPIOE),
+        dp.GPIOF.split(ccdr.peripheral.GPIOF),
+        dp.GPIOG.split(ccdr.peripheral.GPIOG),
+        dp.GPIOH.split(ccdr.peripheral.GPIOH),
+    );
 
     let mut led_user = daisy::led::LedUser::new(pins.LED_USER);
 
@@ -82,13 +79,82 @@ fn main() -> ! {
 
     let i2c2_prec = ccdr.peripheral.I2C2;
 
-    let audio_interface = audio::Interface::init(&ccdr.clocks,
-                                                 sai1_prec,
-                                                 sai1_pins,
-                                                 i2c2_prec,                      // added i2c init
-                                                 i2c2_pins,
-                                                 ccdr.peripheral.DMA1).unwrap();
+    let audio_interface = audio::Interface::init(
+        &ccdr.clocks,
+        sai1_prec,
+        sai1_pins,
+        i2c2_prec, // added i2c init
+        i2c2_pins,
+        ccdr.peripheral.DMA1,
+    )
+    .unwrap();
 
+    let sdram = crate::sdram::Sdram::new(
+        device.FMC,
+        ccdr.peripheral.FMC,
+        &ccdr.clocks,
+        &mut delay,
+        &mut core.SCB,
+        &mut core.MPU,
+        gpiod.pd0,
+        gpiod.pd1,
+        gpiod.pd8,
+        gpiod.pd9,
+        gpiod.pd10,
+        gpiod.pd14,
+        gpiod.pd15,
+        gpioe.pe0,
+        gpioe.pe1,
+        gpioe.pe7,
+        gpioe.pe8,
+        gpioe.pe9,
+        gpioe.pe10,
+        gpioe.pe11,
+        gpioe.pe12,
+        gpioe.pe13,
+        gpioe.pe14,
+        gpioe.pe15,
+        gpiof.pf0,
+        gpiof.pf1,
+        gpiof.pf2,
+        gpiof.pf3,
+        gpiof.pf4,
+        gpiof.pf5,
+        gpiof.pf11,
+        gpiof.pf12,
+        gpiof.pf13,
+        gpiof.pf14,
+        gpiof.pf15,
+        gpiog.pg0,
+        gpiog.pg1,
+        gpiog.pg2,
+        gpiog.pg4,
+        gpiog.pg5,
+        gpiog.pg8,
+        gpiog.pg15,
+        gpioh.ph2,
+        gpioh.ph3,
+        gpioh.ph5,
+        gpioh.ph8,
+        gpioh.ph9,
+        gpioh.ph10,
+        gpioh.ph11,
+        gpioh.ph12,
+        gpioh.ph13,
+        gpioh.ph14,
+        gpioh.ph15,
+        gpioi.pi0,
+        gpioi.pi1,
+        gpioi.pi2,
+        gpioi.pi3,
+        gpioi.pi4,
+        gpioi.pi5,
+        gpioi.pi6,
+        gpioi.pi7,
+        gpioi.pi9,
+        gpioi.pi10,
+    )
+    .into();
 
     // - audio callback -------------------------------------------------------
 
@@ -101,8 +167,7 @@ fn main() -> ! {
             unsafe { OSC_1.dx = (1. / fs) * 110.00 };
             unsafe { OSC_2.dx = (1. / fs) * 110.00 };
             for frame in block {
-                *frame = (unsafe { OSC_1.step() },
-                          unsafe { OSC_2.step() });
+                *frame = (unsafe { OSC_1.step() }, unsafe { OSC_2.step() });
             }
         }
 
@@ -136,7 +201,6 @@ fn main() -> ! {
         AUDIO_INTERFACE.borrow(cs).replace(Some(audio_interface));
     });
 
-
     // - main loop ------------------------------------------------------------
 
     let one_second = ccdr.clocks.sys_ck().0;
@@ -148,7 +212,6 @@ fn main() -> ! {
         asm::delay(one_second);
     }
 }
-
 
 // - interrupts ---------------------------------------------------------------
 
