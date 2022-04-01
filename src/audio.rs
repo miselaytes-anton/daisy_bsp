@@ -406,8 +406,8 @@ const REGISTER_CONFIG: &[(Register, u8)] = &[
     // reset Codec
     (Register::RESET, 0x00),
     // set line inputs 0dB
-    (Register::LINVOL, 0x17),
-    (Register::RINVOL, 0x17),
+    (Register::LINVOL, 0b11110),
+    (Register::RINVOL, 0b11110),
     // set headphone to mute
     (Register::LOUT1V, 0x00),
     (Register::ROUT1V, 0x00),
